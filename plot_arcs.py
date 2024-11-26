@@ -200,16 +200,13 @@ def determine_arc_direction(elev):
     return 'ascending' if elev[1] > elev[0] else 'descending'
 
 
-def plot_arc(ax, elev, dsnr, sat_num, freq, const, azim, show_legend=True):
-    """Plot a single arc with direction in legend."""
+def plot_arc(ax, elev, dsnr, sat_num, freq, const, azim):
+    """
+    Plot a single arc with direction in legend.
+    """
     direction = determine_arc_direction(elev)
     label = f'Sat {sat_num} {freq} {const} az={azim}° ({direction})'
     ax.plot(elev, dsnr, '.-', label=label)
-    ax.set_xlabel('Elevation Angle (degrees)')
-    ax.set_ylabel('Detrended SNR (volts/volts)')
-    ax.grid(True)
-    if show_legend:
-        ax.legend()
 
 
 def main(station, year, doy, sat=None, freq=None, const=None,
@@ -254,7 +251,7 @@ def main(station, year, doy, sat=None, freq=None, const=None,
     freqs_found = sorted(set(parse_arc_filename(f)[1] for f in arc_files))
     freq_str = ','.join(freqs_found)
 
-    # Create plots
+    # Create plot
     fig, ax = plt.subplots(figsize=(10, 6))
 
     # Count number of valid arcs
@@ -264,16 +261,31 @@ def main(station, year, doy, sat=None, freq=None, const=None,
         if elev is not None:
             valid_arc_count += 1
 
-    # Determine if we should show the legend
-    show_legend = valid_arc_count <= 10
-
+    # Plot individual arcs
     for arc_file in arc_files:
-        sat_num, freq, const, azim = parse_arc_filename(arc_file)
+        sat_num, freq_arc, const_arc, azim = parse_arc_filename(arc_file)
         elev, dsnr, secs = read_arc_file(arc_file)
 
         if elev is not None:
-            plot_arc(ax, elev, dsnr, sat_num, freq, const, azim, show_legend)
+            plot_arc(ax, elev, dsnr, sat_num, freq_arc, const_arc, azim)
 
+    # Set up plot styling and title
+    title = f"GNSS-IR SNR Arcs - {station} ({year}/{doy:03d})"
+    if const:
+        title += f" [{const}]"
+    elif sat:
+        title += f" [Sat {sat}]"
+    title += f" [{freq or 'All Freq.'}]"
+
+    ax.set_title(title)
+    ax.set_xlabel('Elevation Angle (degrees)')
+    ax.set_ylabel('Detrended SNR (volts/volts)')
+    ax.grid(True)
+
+    if valid_arc_count <= 10:
+        ax.legend()
+
+    # Generate plot filename
     plot_name = f'arcs_{station}_{year}_{doy:03d}'
     if sat:
         plot_name += f'_sat{sat}'
@@ -285,6 +297,7 @@ def main(station, year, doy, sat=None, freq=None, const=None,
         plot_name += f'_{direction}'
     plot_name += '.png'
 
+    # Save and display plot
     plot_path = plot_dir / plot_name
     plt.savefig(plot_path)
     print(f'Plot saved to: {plot_path}')
