@@ -270,7 +270,7 @@ def main(station, year, doy, sat=None, freq=None, const=None,
             plot_arc(ax, elev, dsnr, sat_num, freq_arc, const_arc, azim)
 
     # Set up plot styling and title
-    title = f"GNSS-IR SNR Arcs - {station} ({year}/{doy:03d})"
+    title = f"Detrended SNR - {station} ({year}/{doy:03d})"
     if const:
         title += f" [{const}]"
     elif sat:
