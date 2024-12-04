@@ -40,4 +40,4 @@ def plot_sea_level(filename):
     plt.show()
 
 # Usage example:
-plot_sea_level("/home/george/Scripts/gnssIR/refl/Files/newe/newe_spline_out.txt")
+plot_sea_level("/data/refl_code/Files/newe/newe_spline_out.txt")

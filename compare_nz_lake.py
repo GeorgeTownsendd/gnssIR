@@ -7,7 +7,7 @@ import numpy as np
 lake_df = pd.read_csv('nz_lake_data.csv', sep=';', parse_dates=['datetime'])
 
 # Read the GNSS reflector height data (space separated with comments)
-gnss_df = pd.read_csv('/home/george/Scripts/gnssIR/refl/Files/tgho/tgho_dailyRH.txt',
+gnss_df = pd.read_csv('/data/refl_code/Files/tgho/tgho_dailyRH.txt',
                       comment='%',
                       delim_whitespace=True,
                       names=['year', 'doy', 'RH', 'numval', 'month', 'day',
