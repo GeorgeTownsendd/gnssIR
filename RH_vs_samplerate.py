@@ -101,5 +101,8 @@ def analyse_day_at_rate(station, year, doy, rinex_path, dec=1, results_dir='resu
 
 
 if __name__ == "__main__":
-    results = analyse_day_at_rate('mchl', 2024, 1, rinex_path='data/examples/MCHL00AUS_R_20240010000_01D_01S_MO.rnx', dec=1)
-    print(results)
+    for rate in range(1, 31):
+        if rate not in (1, 5, 15, 30):
+            print(rate)
+            results = analyse_day_at_rate('mchl', 2024, 1, rinex_path='data/examples/MCHL00AUS_R_20240010000_01D_01S_MO.rnx', dec=rate)
+            print(results)

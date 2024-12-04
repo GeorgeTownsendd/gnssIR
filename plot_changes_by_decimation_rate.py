@@ -149,5 +149,110 @@ def plot_variable_by_decimation(results_dir='results/', variable_name=None):
 
     return combined_df
 
+
+def plot_variable_by_decimation_single_sat(results_dir='results/', variable_name=None, satellite_number=12):
+    """
+    Load result files and plot a specified variable against decimation rate for a single satellite.
+    Creates a scatter plot of all points.
+
+    Args:
+        results_dir (str): Path to results directory
+        variable_name (str): Name of the variable to plot (must match column headers)
+        satellite_number (int): Satellite number to analyze
+    """
+    # Define column names based on the file structure
+    columns = ['year', 'doy', 'RH', 'sat', 'UTCtime', 'Azim', 'Amp', 'eminO',
+               'emaxO', 'NumbOf', 'freq', 'rise', 'EdotF', 'PkNoise', 'DelT',
+               'MJD', 'refr_model']
+
+    if variable_name not in columns:
+        print(f"Error: variable_name must be one of: {', '.join(columns)}")
+        return
+
+    # Get all txt files (excluding arc directories)
+    result_files = sorted([f for f in Path(results_dir).glob('*.txt')])
+
+    # Data structure to hold results
+    dataframes = []
+    decimation_rates = []
+
+    for file_path in result_files:
+        match = re.search(r'dec(\d+)\.txt$', str(file_path))
+        if not match:
+            continue
+
+        dec_rate = int(match.group(1))
+
+        try:
+            df = pd.read_csv(file_path, comment='%', names=columns, delim_whitespace=True)
+            # Filter for specified satellite
+            df = df[df['sat'].astype(int) == satellite_number]
+            if len(df) == 0:
+                print(f"No data for satellite {satellite_number} in {file_path.name}")
+                continue
+
+            df['decimation'] = dec_rate
+            dataframes.append(df)
+            decimation_rates.append(dec_rate)
+            print(f"Loaded {file_path.name}: {len(df)} rows for satellite {satellite_number}")
+
+        except Exception as e:
+            print(f"Error reading {file_path}: {e}")
+
+    if not dataframes:
+        print(f"No valid data found for satellite {satellite_number}")
+        return
+
+    # Find matching arcs across all decimation rates
+    filtered_dfs = find_matching_arcs(dataframes)
+
+    if not all(len(df) > 0 for df in filtered_dfs):
+        print(f"No matching arcs found across all decimation rates for satellite {satellite_number}")
+        return
+
+    # Combine all filtered dataframes
+    combined_df = pd.concat(filtered_dfs)
+
+    # Count unique arcs
+    n_arcs = len(set([f"{int(row['rise'])}_{round(row['UTCtime'], 2)}"
+                      for _, row in filtered_dfs[0].iterrows()]))
+
+    # Create figure with specific size and DPI for publication quality
+    plt.figure(figsize=(8, 6), dpi=300)
+
+    # Create scatter plot
+    for dec_rate in sorted(decimation_rates):
+        dec_data = combined_df[combined_df['decimation'] == dec_rate]
+        plt.scatter(dec_data['decimation'], dec_data[variable_name],
+                    alpha=0.6, s=50, color='tab:blue')
+
+    # Customize plot
+    plt.grid(True, linestyle='--', alpha=0.7)
+    plt.xlabel('Decimation Rate', fontsize=12)
+    plt.ylabel(variable_name, fontsize=12)
+    plt.title(f'{variable_name} vs Decimation Rate\nSatellite {satellite_number} (n={n_arcs} matching arcs)',
+              fontsize=12, pad=20)
+
+    # Print summary statistics
+    print(f"\nSummary statistics for satellite {satellite_number}:")
+    summary = combined_df.groupby('decimation')[variable_name].agg(['count', 'mean', 'std', 'min', 'max'])
+    print(summary)
+
+    # Set x-axis to show all decimation rates
+    plt.xticks(sorted(decimation_rates))
+
+    # Adjust layout to prevent cutting off labels
+    plt.tight_layout()
+
+    print(f"\nTotal number of matching arcs for satellite {satellite_number}: {n_arcs}")
+    print("\nDecimation rates included:", sorted(decimation_rates))
+
+    plt.show()
+
+    return combined_df
+
 # Example usage:
-plot_variable_by_decimation(variable_name='RH')
+df = plot_variable_by_decimation_single_sat(variable_name='Amp', satellite_number=12)
+
+
+#plot_variable_by_decimation(variable_name='RH')
