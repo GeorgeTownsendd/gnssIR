@@ -380,13 +380,34 @@ def plot_reflection_zones(station_name: str,
     # Plot DEM in second subplot
     with rasterio.open(dem_path) as src:
         dem_data = src.read(1)
+
+        # Get row/col indices for visible area
+        row_min, col_min = src.index(min_x - padding_x, max_y + padding_y)
+        row_max, col_max = src.index(max_x + padding_x, min_y - padding_y)
+
+        # Ensure valid bounds
+        row_min, row_max = max(0, min(row_min, row_max)), min(dem_data.shape[0], max(row_min, row_max))
+        col_min, col_max = max(0, min(col_min, col_max)), min(dem_data.shape[1], max(col_min, col_max))
+        visible_dem = dem_data[row_min:row_max, col_min:col_max]
+
+        if src.nodata is not None:
+            visible_dem = visible_dem[visible_dem != src.nodata]
+
+        vmin, vmax = np.min(visible_dem), np.max(visible_dem)
         im = ax2.imshow(dem_data,
                         extent=[src.bounds.left, src.bounds.right,
                                 src.bounds.bottom, src.bounds.top],
                         cmap='terrain',
                         interpolation='nearest',
-                        vmin=75,
-                        vmax=90)
+                        vmin=vmin,
+                        vmax=vmax)
+        im = ax2.imshow(dem_data,
+                        extent=[src.bounds.left, src.bounds.right,
+                                src.bounds.bottom, src.bounds.top],
+                        cmap='terrain',
+                        interpolation='nearest',
+                        vmin=vmin,
+                        vmax=vmax)
         plt.colorbar(im, ax=ax2, label='Elevation (m)')
 
     # Create elevation profiles and plot cross-section lines
@@ -437,7 +458,7 @@ def plot_reflection_zones(station_name: str,
     ax1.grid(False)
     ax1.ticklabel_format(style='plain')
 
-    ax2.set_title('Reflection Zones\n(Digital Elevation Model)')
+    ax2.set_title('Reflection Zones\n(Digital Surface Model)')
     ax2.set_xlabel('Easting (m)')
     ax2.set_ylabel('Northing (m)')
     ax2.grid(False)
@@ -448,7 +469,7 @@ def plot_reflection_zones(station_name: str,
     ax3.set_xlabel('Distance (m)')
     ax3.set_ylabel('Elevation (m)')
     ax3.grid(True, alpha=0.3)
-    ax3.legend(fontsize='small', loc='upper right')
+    ax3.legend(fontsize='small')
 
     # Adjust layout
     fig1.tight_layout()
@@ -456,12 +477,12 @@ def plot_reflection_zones(station_name: str,
     return fig1, (ax1, ax2, ax3)
 
 if __name__ == "__main__":
-    # Example usage
-    dem_path = "/home/george/Downloads/lds-northland-lidar-1m-dsm-2018-2020-GTiff/DSM_AV26_2018_1000_1027.tif"
-    phase_file = "data/refl_code/input/ktia_phaseRH.txt"
+    station_name = 'sedd'
+    phase_file = f"data/refl_code/input/{station_name}_phaseRH.txt"
 
-    # Create both plots with a single function call
-    fig1, axes = plot_reflection_zones('ktia', dem_path, phase_file,
-                                                     elevations=[10], prns=[1, 2],
-                                                     zoom=18, az_tolerance=10)
+    #dem_path = "/home/george/Downloads/lds-northland-lidar-1m-dsm-2018-2020-GTiff/DSM_AV26_2018_1000_1027.tif"
+    #dem_path = "/home/george/Downloads/lds-auckland-lidar-1m-dsm-2013-GTiff/DSM_AZ31_2236_2013.tif" #
+    dem_path = '/home/george/Downloads/lds-marlborough-lidar-1m-dsm-2018-GTiff(1)/DSM_BR29_2018_1000_2723.tif' #SEDD
+
+    fig1, (ax1, ax2, ax3) = plot_reflection_zones(station_name, dem_path, phase_file, elevations=[5], prns=[1], zoom=18, az_tolerance=10)
     plt.show()
