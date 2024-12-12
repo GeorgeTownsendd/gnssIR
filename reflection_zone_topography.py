@@ -195,9 +195,6 @@ def plot_reflection_zones(station_name: str,
     # Load phase data
     phase_data = read_phase_data(phase_file)
 
-    # Set up coordinate transformer (WGS84 to NZTM2000)
-    transformer = Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True)
-
     # Create colormap for Nval visualization
     nval_cmap = plt.cm.viridis
 
@@ -214,8 +211,12 @@ def plot_reflection_zones(station_name: str,
     namespace = root.tag.split('}')[0] + '}'
     placemarks = root.findall(f".//{namespace}Placemark")
 
-    # Create main figure with three subplots
-    fig1, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=figsize_main)
+    # Create main figure with three subplots using gridspec
+    fig1 = plt.figure(figsize=figsize_main, constrained_layout=True)
+    gs = fig1.add_gridspec(1, 3)
+    ax1 = fig1.add_subplot(gs[0, 0])
+    ax2 = fig1.add_subplot(gs[0, 1])
+    ax3 = fig1.add_subplot(gs[0, 2])
 
     # Lists to store transformed coordinates and data
     all_x = []
@@ -223,22 +224,31 @@ def plot_reflection_zones(station_name: str,
     all_polygons = []
     zone_info = []
 
-    # First get station coordinates
+    # First get station coordinates and set up projection
     station_x = station_y = None
     for placemark in placemarks:
         name = placemark.find(f"./{namespace}name")
         if name is not None and name.text.lower() == station_name.lower():
             coords = extract_coords(placemark, namespace)
             if isinstance(coords, tuple):
-                station_x, station_y = transformer.transform(coords[0], coords[1])
+                lon, lat = coords
+                # Get UTM zone number
+                zone_number = int((lon + 180) / 6) + 1
+                # Determine hemisphere
+                hemisphere = 'north' if lat >= 0 else 'south'
+                # Create UTM projection string
+                proj_string = f"+proj=utm +zone={zone_number} +{hemisphere} +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
+                # Set up transformer
+                transformer = Transformer.from_crs("EPSG:4326", proj_string, always_xy=True)
+                # Transform coordinates
+                station_x, station_y = transformer.transform(lon, lat)
                 all_x.append(station_x)
                 all_y.append(station_y)
-                ax1.plot(station_x, station_y, marker='*', color='yellow',
-                         markersize=20, markeredgecolor='red', markeredgewidth=2,
-                         label='Station', zorder=100)
-                ax2.plot(station_x, station_y, marker='*', color='yellow',
-                         markersize=20, markeredgecolor='red', markeredgewidth=2,
-                         label='Station', zorder=100)
+                # Plot station on both maps
+                for ax in [ax1, ax2]:
+                    ax.plot(station_x, station_y, marker='*', color='yellow',
+                            markersize=20, markeredgecolor='red', markeredgewidth=2,
+                            label='Station', zorder=100)
                 break
 
     if station_x is None or station_y is None:
@@ -268,7 +278,7 @@ def plot_reflection_zones(station_name: str,
 
         coords = extract_coords(placemark, namespace)
         if coords is not None and isinstance(coords, np.ndarray):
-            # Transform coordinates to NZTM2000
+            # Transform coordinates to UTM
             x, y = transformer.transform(coords[:, 0], coords[:, 1])
             transformed_coords = np.column_stack((x, y))
 
@@ -374,36 +384,56 @@ def plot_reflection_zones(station_name: str,
     ax2.set_xlim(min_x - padding_x, max_x + padding_x)
     ax2.set_ylim(min_y - padding_y, max_y + padding_y)
 
-    # Add basemap to first subplot
-    ctx.add_basemap(ax1, crs="EPSG:2193", source=ctx.providers.Esri.WorldImagery, zoom=zoom)
+    # Add basemap to first subplot (contextily uses Web Mercator)
+    ctx.add_basemap(ax1, crs=proj_string, source=ctx.providers.Esri.WorldImagery, zoom=zoom)
 
     # Plot DEM in second subplot
     with rasterio.open(dem_path) as src:
-        dem_data = src.read(1)
+        # Get the window bounds in the DEM's CRS
+        dem_transformer = Transformer.from_crs(proj_string, src.crs, always_xy=True)
 
-        # Get row/col indices for visible area
-        row_min, col_min = src.index(min_x - padding_x, max_y + padding_y)
-        row_max, col_max = src.index(max_x + padding_x, min_y - padding_y)
+        # Transform the UTM extent corners to DEM CRS
+        left, bottom = dem_transformer.transform(min_x - padding_x, min_y - padding_y)
+        right, top = dem_transformer.transform(max_x + padding_x, max_y + padding_y)
 
-        # Ensure valid bounds
-        row_min, row_max = max(0, min(row_min, row_max)), min(dem_data.shape[0], max(row_min, row_max))
-        col_min, col_max = max(0, min(col_min, col_max)), min(dem_data.shape[1], max(col_min, col_max))
-        visible_dem = dem_data[row_min:row_max, col_min:col_max]
+        # Get pixel coordinates
+        window = src.window(left, bottom, right, top)
+        window = window.round_lengths()
 
+        # Read the data in the window
+        dem_data = src.read(1, window=window)
+
+        # Handle nodata values
         if src.nodata is not None:
-            visible_dem = visible_dem[visible_dem != src.nodata]
+            dem_data = np.ma.masked_equal(dem_data, src.nodata)
 
-        vmin, vmax = np.min(visible_dem), np.max(visible_dem)
+        # Get the transform for the windowed data
+        window_transform = src.window_transform(window)
+
+        # Calculate the extent in UTM coordinates for imshow
+        window_bounds = rasterio.windows.bounds(window, src.transform)
+        utm_transformer = Transformer.from_crs(src.crs, proj_string, always_xy=True)
+
+        # Transform all four corners - window_bounds returns (left, bottom, right, top)
+        corners = [(window_bounds[0], window_bounds[1]),  # left, bottom
+                   (window_bounds[0], window_bounds[3]),  # left, top
+                   (window_bounds[2], window_bounds[3]),  # right, top
+                   (window_bounds[2], window_bounds[1])]  # right, bottom
+
+        utm_corners_x = []
+        utm_corners_y = []
+        for x, y in corners:
+            utm_x, utm_y = utm_transformer.transform(x, y)
+            utm_corners_x.append(utm_x)
+            utm_corners_y.append(utm_y)
+
+        extent = [min(utm_corners_x), max(utm_corners_x),
+                  min(utm_corners_y), max(utm_corners_y)]
+
+        # Plot the DEM
+        vmin, vmax = np.nanmin(dem_data), np.nanmax(dem_data)
         im = ax2.imshow(dem_data,
-                        extent=[src.bounds.left, src.bounds.right,
-                                src.bounds.bottom, src.bounds.top],
-                        cmap='terrain',
-                        interpolation='nearest',
-                        vmin=vmin,
-                        vmax=vmax)
-        im = ax2.imshow(dem_data,
-                        extent=[src.bounds.left, src.bounds.right,
-                                src.bounds.bottom, src.bounds.top],
+                        extent=extent,
                         cmap='terrain',
                         interpolation='nearest',
                         vmin=vmin,
@@ -426,11 +456,36 @@ def plot_reflection_zones(station_name: str,
         furthest_vertex = polygon_coords[np.argmax(distances_to_station)]
 
         # Get elevation profile
-        distances, elevations = get_elevation_profile(
-            dem_path,
-            (closest_vertex[0], closest_vertex[1]),
-            (furthest_vertex[0], furthest_vertex[1])
-        )
+        with rasterio.open(dem_path) as src:
+            # Convert profile endpoints from UTM to the DEM's CRS
+            dem_transformer = Transformer.from_crs(proj_string, src.crs, always_xy=True)
+            start_x, start_y = dem_transformer.transform(closest_vertex[0], closest_vertex[1])
+            end_x, end_y = dem_transformer.transform(furthest_vertex[0], furthest_vertex[1])
+
+            # Create the line with enough points for smooth sampling
+            line_length = np.sqrt((furthest_vertex[0] - closest_vertex[0]) ** 2 +
+                                  (furthest_vertex[1] - closest_vertex[1]) ** 2)
+            num_points = int(line_length / 10)  # Sample every 10 meters
+            num_points = max(100, num_points)  # Ensure minimum number of points
+
+            line = LineString([(start_x, start_y), (end_x, end_y)])
+            distances = np.linspace(0, line_length, num_points)
+            points = [line.interpolate(d / line_length, normalized=True) for d in distances]
+
+            # Sample elevations at these points
+            elevations = []
+            for point in points:
+                row, col = src.index(point.x, point.y)
+                if 0 <= row < src.height and 0 <= col < src.width:
+                    elevation = src.read(1, window=((row, row + 1), (col, col + 1)))[0][0]
+                    if elevation != src.nodata:
+                        elevations.append(elevation)
+                    else:
+                        elevations.append(np.nan)
+                else:
+                    elevations.append(np.nan)
+
+            elevations = np.array(elevations)
 
         # Plot elevation profile
         color = plt.cm.tab10(i % 10)
@@ -452,37 +507,39 @@ def plot_reflection_zones(station_name: str,
                  linewidth=2, alpha=alpha)
 
     # Customize plots
-    ax1.set_title(f'Reflection Zones\n(Satellite)')
+    ax1.set_title(f'Reflection Zones (Satellite)')
     ax1.set_xlabel('Easting (m)')
     ax1.set_ylabel('Northing (m)')
     ax1.grid(False)
     ax1.ticklabel_format(style='plain')
 
-    ax2.set_title('Reflection Zones\n(Digital Surface Model)')
+    ax2.set_title('Digital Surface Model')
     ax2.set_xlabel('Easting (m)')
     ax2.set_ylabel('Northing (m)')
     ax2.grid(False)
     ax2.ticklabel_format(style='plain')
-    # Remove legend from middle subplot
 
-    ax3.set_title('Elevation Cross-Section\n(Nearest to Furthest Vertex)')
+    ax3.set_title('Elevation Cross-Section per Refl-Zone')
     ax3.set_xlabel('Distance (m)')
     ax3.set_ylabel('Elevation (m)')
     ax3.grid(True, alpha=0.3)
     ax3.legend(fontsize='small')
 
-    # Adjust layout
-    fig1.tight_layout()
+    plt.savefig(f'/home/george/Documents/Work/{station_name}.png')
+    #return fig1, (ax1, ax2, ax3)
 
-    return fig1, (ax1, ax2, ax3)
 
 if __name__ == "__main__":
-    station_name = 'sedd'
-    phase_file = f"data/refl_code/input/{station_name}_phaseRH.txt"
+    for station_name in ['mchl']:#['ktia', 'wark', 'sedd', 'mchl']:
+        #station_name = 'sedd'
+        phase_file = f"data/refl_code/input/{station_name}_phaseRH.txt"
+        dem_paths = {
+            'ktia': "/home/george/Downloads/lds-northland-lidar-1m-dsm-2018-2020-GTiff/DSM_AV26_2018_1000_1027.tif",
+            'wark': "/home/george/Downloads/lds-auckland-lidar-1m-dsm-2013-GTiff/DSM_AZ31_2236_2013.tif",
+            'sedd': '/home/george/Downloads/lds-marlborough-lidar-1m-dsm-2018-GTiff(1)/DSM_BR29_2018_1000_2723.tif',
+            'mchl': '/home/george/Downloads/1_Second_DSM_135682/1_Second_DSM.tif'
+        }
 
-    #dem_path = "/home/george/Downloads/lds-northland-lidar-1m-dsm-2018-2020-GTiff/DSM_AV26_2018_1000_1027.tif"
-    #dem_path = "/home/george/Downloads/lds-auckland-lidar-1m-dsm-2013-GTiff/DSM_AZ31_2236_2013.tif" #
-    dem_path = '/home/george/Downloads/lds-marlborough-lidar-1m-dsm-2018-GTiff(1)/DSM_BR29_2018_1000_2723.tif' #SEDD
+        dem_path = dem_paths[station_name]
 
-    fig1, (ax1, ax2, ax3) = plot_reflection_zones(station_name, dem_path, phase_file, elevations=[5], prns=[1], zoom=18, az_tolerance=10)
-    plt.show()
+        plot_reflection_zones(station_name, dem_path, phase_file, elevations=[5], prns=[8], zoom=18, az_tolerance=10)
