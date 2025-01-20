@@ -525,12 +525,13 @@ def plot_reflection_zones(station_name: str,
     ax3.grid(True, alpha=0.3)
     ax3.legend(fontsize='small')
 
-    plt.savefig(f'/home/george/Documents/Work/{station_name}.png')
+    plt.show()
+    #plt.savefig(f'/home/george/Documents/Work/{station_name}.png')
     #return fig1, (ax1, ax2, ax3)
 
 
 if __name__ == "__main__":
-    for station_name in ['mchl']:#['ktia', 'wark', 'sedd', 'mchl']:
+    for station_name in ['ktia']:#['ktia', 'wark', 'sedd', 'mchl']:
         #station_name = 'sedd'
         phase_file = f"data/refl_code/input/{station_name}_phaseRH.txt"
         dem_paths = {
