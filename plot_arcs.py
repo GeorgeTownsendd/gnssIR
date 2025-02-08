@@ -219,7 +219,7 @@ def plot_arc(ax, elev, dsnr, sat_num, freq, const, azim):
     """
     direction = determine_arc_direction(elev)
     label = f'Sat {sat_num} {freq} {const} az={azim}° ({direction})'
-    ax.plot(elev, dsnr, '.-', label=label)
+    ax.plot(elev, dsnr, '-', label=label)
 
 
 def main(station, year, doy, sat=None, freq=None, const=None,
