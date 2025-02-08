@@ -1,0 +1,46 @@
+{
+  "segments": [
+    {
+      "host": "gnsshost-1",
+      "name": "horizontal_patch",
+      "start_time": "2025-02-06T21:50:00",
+      "end_time": "2025-02-07T00:50:00"
+    },
+    {
+      "host": "gnsshost-2",
+      "name": "vertical_patch",
+      "start_time": "2025-02-06T23:10:00",
+      "end_time": "2025-02-07T00:50:00"
+    },
+    {
+      "host": "gnsshost-3",
+      "name": "horizontal_gps500",
+      "start_time": "2025-02-06T22:40:00",
+      "end_time": "2025-02-07T00:45:00"
+    },
+    {
+      "host": "gnsshost-4",
+      "name": "veritcal_gps500",
+      "start_time": "2025-02-06T22:45:00",
+      "end_time": "2025-02-07T00:55:00"
+    },
+    {
+      "host": "gnsshost-1",
+      "name": "blue_cable",
+      "start_time": "2025-02-07T01:45:00",
+      "end_time": "2025-02-07T04:00:00"
+    },
+    {
+      "host": "gnsshost-2",
+      "name": "red_cable",
+      "start_time": "2025-02-07T01:45:00",
+      "end_time": "2025-02-07T04:00:00"
+    },
+    {
+      "host": "gnsshost-3",
+      "name": "vertical_gps500_ublox",
+      "start_time": "2025-02-07T01:50:00",
+      "end_time": "2025-02-07T03:50:00"
+    }
+  ]
+}
