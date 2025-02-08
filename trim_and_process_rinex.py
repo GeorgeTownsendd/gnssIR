@@ -5,6 +5,8 @@ from datetime import datetime, timedelta
 import re
 import logging
 from pathlib import Path
+import tempfile
+import shutil
 
 TEQC_PATH = "/home/george/Scripts/gnssIR/bin/teqc"
 GAP_THRESHOLD = timedelta(minutes=1)
@@ -26,19 +28,14 @@ def setup_logging():
     return log_file
 
 
-def convert_ubx_to_obs(ubx_files):
+def convert_ubx_to_obs(ubx_files, temp_dir):
     """Convert UBX files to OBS format using convbin"""
     logging.info(f"Found {len(ubx_files)} UBX files to convert")
     converted_files = []
 
     for ubx_file in sorted(ubx_files):
         base_name = Path(ubx_file).stem
-        output_file = f"{base_name}.obs"
-
-        if os.path.exists(output_file):
-            logging.info(f"Skipping {ubx_file} as {output_file} already exists")
-            converted_files.append(output_file)
-            continue
+        output_file = os.path.join(temp_dir, f"{base_name}.obs")
 
         cmd = ['convbin', '-od', '-os', '-v', '2.11', '-r', 'ubx', ubx_file, '-o', output_file]
         logging.info(f"Converting {ubx_file} to {output_file}")
@@ -110,7 +107,7 @@ def find_continuous_segments(file_times):
     return segments
 
 
-def process_file(input_file, file_times, prev_file=None, next_file=None):
+def process_file(input_file, file_times, temp_dir, prev_file=None, next_file=None):
     """Process a single RINEX file, handling overlaps"""
     actual_start, actual_end = file_times[input_file]
     logging.info(f"Processing: {input_file}")
@@ -137,7 +134,7 @@ def process_file(input_file, file_times, prev_file=None, next_file=None):
             logging.info(f"Overlap with next file: {overlap}")
             logging.info(f"Using midpoint: {end_time}")
 
-    output_file = f"processed_{input_file}"
+    output_file = os.path.join(temp_dir, f"processed_{os.path.basename(input_file)}")
     start_str = start_time.strftime('%Y%m%d%H%M%S.%f')[:15]
     end_str = end_time.strftime('%Y%m%d%H%M%S.%f')[:15]
 
@@ -187,62 +184,61 @@ def main():
     log_file = setup_logging()
     logging.info("Starting RINEX processing script")
 
-    # Clean up existing files
-    for f in glob.glob('processed_*.obs'):
-        os.remove(f)
-    for f in glob.glob('merged_*.obs'):
-        os.remove(f)
+    # Create temporary directory
+    with tempfile.TemporaryDirectory() as temp_dir:
+        logging.info(f"Using temporary directory: {temp_dir}")
 
-    # First check for .obs files
-    obs_files = sorted(glob.glob('*.obs'))
-    obs_files = [f for f in obs_files if not f.startswith(('processed_', 'trimmed_', 'merged'))]
+        # First check for .obs files
+        obs_files = sorted(glob.glob('*.obs'))
+        obs_files = [f for f in obs_files if not f.startswith(('processed_', 'trimmed_', 'merged'))]
 
-    # If no .obs files found, look for .ubx files
-    if not obs_files:
-        ubx_files = glob.glob('*.ubx')
-        if ubx_files:
-            logging.info("No OBS files found, converting UBX files")
-            obs_files = convert_ubx_to_obs(ubx_files)
-        else:
-            logging.error("No OBS or UBX files found in current directory")
+        # If no .obs files found, look for .ubx files
+        if not obs_files:
+            ubx_files = glob.glob('*.ubx')
+            if ubx_files:
+                logging.info("No OBS files found, converting UBX files")
+                obs_files = convert_ubx_to_obs(ubx_files, temp_dir)
+            else:
+                logging.error("No OBS or UBX files found in current directory")
+                return
+
+        if not obs_files:
+            logging.error("No valid observation files found after conversion")
             return
 
-    if not obs_files:
-        logging.error("No valid observation files found after conversion")
-        return
+        logging.info(f"Found {len(obs_files)} observation files to process")
 
-    logging.info(f"Found {len(obs_files)} observation files to process")
+        # Get file times
+        file_times = {}
+        for f in obs_files:
+            start, end = parse_teqc_meta(f)
+            if start and end:
+                file_times[f] = (start, end)
+                logging.info(f"File {f} spans: {start} -> {end}")
 
-    # Get file times
-    file_times = {}
-    for f in obs_files:
-        start, end = parse_teqc_meta(f)
-        if start and end:
-            file_times[f] = (start, end)
-            logging.info(f"File {f} spans: {start} -> {end}")
+        # Find continuous segments
+        segments = find_continuous_segments(file_times)
+        logging.info(f"Found {len(segments)} continuous segments")
 
-    # Find continuous segments
-    segments = find_continuous_segments(file_times)
-    logging.info(f"Found {len(segments)} continuous segments")
+        # Process each segment
+        for segment_num, segment_files in enumerate(segments, 1):
+            logging.info(f"Processing segment {segment_num} ({len(segment_files)} files)")
+            processed_files = []
 
-    # Process each segment
-    for segment_num, segment_files in enumerate(segments, 1):
-        logging.info(f"Processing segment {segment_num} ({len(segment_files)} files)")
-        processed_files = []
+            for i, obs_file in enumerate(segment_files):
+                prev_file = segment_files[i - 1] if i > 0 else None
+                next_file = segment_files[i + 1] if i < len(segment_files) - 1 else None
 
-        for i, obs_file in enumerate(segment_files):
-            prev_file = segment_files[i - 1] if i > 0 else None
-            next_file = segment_files[i + 1] if i < len(segment_files) - 1 else None
+                processed_file = process_file(obs_file, file_times, temp_dir, prev_file, next_file)
+                if processed_file:
+                    processed_files.append(processed_file)
 
-            processed_file = process_file(obs_file, file_times, prev_file, next_file)
-            if processed_file:
-                processed_files.append(processed_file)
+            if processed_files:
+                merge_segment(processed_files, segment_num)
 
-        if processed_files:
-            merge_segment(processed_files, segment_num)
-
-    logging.info("Processing complete")
-    logging.info(f"Log file saved as: {log_file}")
+        logging.info("Processing complete")
+        logging.info(f"Log file saved as: {log_file}")
+        # Temporary directory and its contents will be automatically cleaned up
 
 
 if __name__ == "__main__":
