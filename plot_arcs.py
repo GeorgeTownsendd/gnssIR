@@ -180,18 +180,31 @@ def parse_arc_filename(filename):
     return sat_num, freq, const, azim
 
 
-def read_arc_file(file_path):
-    """Read elevation angles, dSNR values, and seconds from arc file."""
+def read_arc_file(file_path, decimate=None):
+    """
+    Read elevation angles, dSNR values, and seconds from arc file.
+
+    Args:
+        file_path: Path to the arc file
+        decimate: If specified, take every Nth measurement
+
+    Returns:
+        Tuple of (elevation angles, dSNR values, seconds) arrays
+    """
     try:
         data = np.loadtxt(file_path, skiprows=2)
         if data.size == 0:
             print(f'Warning: Empty file {file_path}')
             return None, None, None
+
+        if decimate and decimate > 1:
+            # Use numpy's slicing with step value
+            data = data[::decimate]
+
         return data[:, 0], data[:, 1], data[:, 2]  # elev, dSNR, seconds
     except Exception as e:
         print(f'Error reading {file_path}: {e}')
         return None, None, None
-
 
 def determine_arc_direction(elev):
     """Determine if arc is ascending or descending based on elevation angles."""
@@ -210,8 +223,13 @@ def plot_arc(ax, elev, dsnr, sat_num, freq, const, azim):
 
 
 def main(station, year, doy, sat=None, freq=None, const=None,
-         direction='both', include_failed=False):
+         direction='both', include_failed=False, decimate=None):
     """Plot detrended SNR arcs for specified parameters."""
+    # Input validation for decimation
+    if decimate is not None and decimate < 1:
+        print('Error: Decimate value must be greater than 0')
+        sys.exit(1)
+
     # Get directories
     arc_dir = get_arc_directory(year, station, doy, include_failed)
     plot_dir = make_plot_directory(year, station, doy)
@@ -257,14 +275,14 @@ def main(station, year, doy, sat=None, freq=None, const=None,
     # Count number of valid arcs
     valid_arc_count = 0
     for arc_file in arc_files:
-        elev, dsnr, secs = read_arc_file(arc_file)
+        elev, dsnr, secs = read_arc_file(arc_file, decimate=decimate)
         if elev is not None:
             valid_arc_count += 1
 
     # Plot individual arcs
     for arc_file in arc_files:
         sat_num, freq_arc, const_arc, azim = parse_arc_filename(arc_file)
-        elev, dsnr, secs = read_arc_file(arc_file)
+        elev, dsnr, secs = read_arc_file(arc_file, decimate=decimate)
 
         if elev is not None:
             plot_arc(ax, elev, dsnr, sat_num, freq_arc, const_arc, azim)
@@ -276,6 +294,8 @@ def main(station, year, doy, sat=None, freq=None, const=None,
     elif sat:
         title += f" [Sat {sat}]"
     title += f" [{freq or 'All Freq.'}]"
+    if decimate and decimate > 1:
+        title += f" (decimated {decimate}x)"
 
     ax.set_title(title)
     ax.set_xlabel('Elevation Angle (degrees)')
@@ -295,6 +315,8 @@ def main(station, year, doy, sat=None, freq=None, const=None,
         plot_name += f'_{freq}'
     if direction != 'both':
         plot_name += f'_{direction}'
+    if decimate and decimate > 1:
+        plot_name += f'_dec{decimate}'
     plot_name += '.png'
 
     # Save and display plot
@@ -320,9 +342,11 @@ def parse_arguments():
                       default='both', help='Show only ascending, descending, or both arcs')
     parser.add_argument('-include_failed', action='store_true',
                       help='Include arcs that failed QC')
+    parser.add_argument('-decimate', type=int,
+                      help='Take every Nth measurement (e.g., 5 means use every 5th point)')
     return parser.parse_args()
 
 if __name__ == '__main__':
     args = parse_arguments()
     main(args.station, args.year, args.doy, args.sat, args.freq,
-         args.const, args.direction, args.include_failed)
+         args.const, args.direction, args.include_failed, args.decimate)
