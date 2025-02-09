@@ -5,12 +5,9 @@ GNSS Observation File Generator
 
 This script orchestrates the processing of GNSS observation files by:
 1. Converting raw GNSS data to RINEX format
-2. Processing and merging RINEX files
-3. Extracting time-bounded segments
+2. Processing and merging RINEX files for each host
+3. Processing host segments in chronological order
 4. Organizing files into appropriate directories
-
-The script uses RinexProcessor and SegmentProcessor classes to handle
-the individual processing steps.
 """
 
 import os
@@ -48,14 +45,10 @@ class ObservationGenerator:
     """Generate and process GNSS observation files"""
 
     def __init__(self, config: GeneratorConfig):
-        """
-        Initialize generator with configuration.
-
-        Args:
-            config: GeneratorConfig instance containing processing parameters
-        """
+        """Initialize generator with configuration."""
         self.config = config
-        self.logger = self._setup_logging()
+        self.logger = None  # Initialize first
+        self.logger = self._setup_logging()  # Then set up logging
 
         # Import processors
         self.rinex_processor = self._import_rinex_processor()
@@ -65,43 +58,31 @@ class ObservationGenerator:
             raise ImportError("Failed to import required processing modules")
 
     def _setup_logging(self) -> logging.Logger:
-        """
-        Setup logging configuration with both file and console output.
-
-        Returns:
-            Configured logger instance
-        """
+        """Setup logging configuration."""
         logger = logging.getLogger('obs_generator')
 
-        if not logger.handlers:  # Only add handlers if none exist
+        if not logger.handlers:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             log_file = f'generate_obs_{timestamp}.log'
 
             formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 
-            # File handler
             file_handler = logging.FileHandler(log_file)
             file_handler.setFormatter(formatter)
             logger.addHandler(file_handler)
 
-            # Console handler
             console_handler = logging.StreamHandler()
             console_handler.setFormatter(formatter)
             logger.addHandler(console_handler)
 
             logger.setLevel(self.config.log_level)
 
-            self.logger.info(f"Log file: {log_file}")
+            logger.info(f"Log file: {log_file}")
 
         return logger
 
     def _import_rinex_processor(self):
-        """
-        Import the RinexProcessor class.
-
-        Returns:
-            RinexProcessor module or None if import fails
-        """
+        """Import the RinexProcessor class."""
         try:
             spec = importlib.util.spec_from_file_location(
                 "rinex_processor",
@@ -115,12 +96,7 @@ class ObservationGenerator:
             return None
 
     def _import_segment_processor(self):
-        """
-        Import the segment processor module.
-
-        Returns:
-            SegmentProcessor module or None if import fails
-        """
+        """Import the segment processor module."""
         try:
             spec = importlib.util.spec_from_file_location(
                 "segment_processor",
@@ -128,37 +104,26 @@ class ObservationGenerator:
             )
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
-
-            # Override FIELD_TEST_DIR if it exists in the module
-            if hasattr(module, 'FIELD_TEST_DIR'):
-                module.FIELD_TEST_DIR = self.config.field_test_dir.name
-
             return module
         except Exception as e:
             self.logger.error(f"Failed to import segment processor: {e}")
             return None
 
+    def get_host_directories(self, config: Dict[str, Any]) -> Set[str]:
+        """Get unique host directories from config."""
+        return set(segment['host'] for segment in config['segments'])
+
     def verify_config(self, config_path: Path) -> Optional[Dict[str, Any]]:
-        """
-        Verify the segments configuration file exists and is valid.
-
-        Args:
-            config_path: Path to configuration JSON file
-
-        Returns:
-            Configuration dictionary or None if verification fails
-        """
+        """Verify the segments configuration file."""
         try:
             with open(config_path, 'r') as f:
                 config = json.load(f)
 
-            # Verify required keys
             required_keys = ['segments']
             for key in required_keys:
                 if key not in config:
                     raise KeyError(f"Missing required key: {key}")
 
-            # Verify segment structure
             for segment in config['segments']:
                 required_segment_keys = ['host', 'name', 'start_time', 'end_time']
                 for key in required_segment_keys:
@@ -170,25 +135,8 @@ class ObservationGenerator:
             self.logger.error(f"Config verification failed: {e}")
             return None
 
-    def get_host_directories(self, config: Dict[str, Any]) -> Set[str]:
-        """
-        Get unique host directories from config.
-
-        Args:
-            config: Configuration dictionary
-
-        Returns:
-            Set of unique host identifiers
-        """
-        return set(segment['host'] for segment in config['segments'])
-
     def verify_paths(self) -> bool:
-        """
-        Verify all required paths exist.
-
-        Returns:
-            True if all paths exist, False otherwise
-        """
+        """Verify all required paths exist."""
         paths_to_check = [
             (self.config.field_test_dir, "Field test directory"),
             (self.config.rinex_processor_path, "RINEX processor module"),
@@ -204,12 +152,7 @@ class ObservationGenerator:
         return True
 
     def process(self) -> bool:
-        """
-        Process observation files according to configuration.
-
-        Returns:
-            True if processing successful, False otherwise
-        """
+        """Process observation files according to configuration."""
         self.logger.info("Starting OBS file generation process")
 
         # Verify all required paths exist
@@ -231,26 +174,33 @@ class ObservationGenerator:
             host_dirs = self.get_host_directories(config)
             successful_hosts = 0
 
-            for host in host_dirs:
+            # Process RINEX files for each host
+            for host in sorted(host_dirs):
                 host_path = self.config.field_test_dir / host
                 host_path.mkdir(exist_ok=True)
 
-                self.logger.info(f"Processing host directory: {host}")
+                self.logger.info(f"Processing RINEX files for host: {host}")
                 if processor.process_directory(host_path):
                     successful_hosts += 1
                 else:
-                    self.logger.error(f"Failed to process host directory: {host}")
+                    self.logger.error(f"Failed to process RINEX files for host: {host}")
 
-            self.logger.info(f"Processed {successful_hosts} of {len(host_dirs)} host directories")
+            self.logger.info(f"Processed RINEX files for {successful_hosts} of {len(host_dirs)} host directories")
 
             if successful_hosts > 0:
                 # Change to field test directory parent for segment processing
                 original_dir = os.getcwd()
                 os.chdir(self.config.field_test_dir.parent)
 
-                # Run segment processor
+                # Create SegmentProcessor instance
+                segment_config = self.segment_processor.SegmentConfig(
+                    field_test_dir=self.config.field_test_dir.name,
+                    log_level=self.config.log_level
+                )
+                segment_processor = self.segment_processor.SegmentProcessor(segment_config)
+
+                # Process segments
                 self.logger.info("Starting segment processing")
-                segment_processor = self.segment_processor.SegmentProcessor()
                 success = segment_processor.process_directory(self.config.field_test_dir)
 
                 # Return to original directory
@@ -269,7 +219,7 @@ class ObservationGenerator:
 
 
 def main():
-    """Command-line interface for standalone use"""
+    """Command-line interface."""
     import argparse
 
     parser = argparse.ArgumentParser(
