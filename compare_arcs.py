@@ -1,102 +1,211 @@
+#!/usr/bin/env python3
+"""
+Compare detrended SNR arcs from GNSS-IR arc files across multiple stations
+to test antenna performance.
+
+This script reads arc files (created by gnssir with the -savearcs option)
+for a given year and day-of-year (DOY) and compares arcs for specific satellites
+and/or frequencies across the provided stations.
+"""
+
+import os
+import sys
+import argparse
+import math
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 import re
-import sys
 
-# Set quadrant selection (1-4); set to None to use all subplots
-selected_quadrant = 1 # Change to 1, 2, 3, or 4 to focus on one quadrant
+# Base data path (adjust if needed)
+BASE_PATH = Path("/home/george/Scripts/gnssIR/data/refl_code/2025")
 
-def decimate_data(data, sample_rate):
+
+def parse_arc_filename(filename):
     """
-    Decimate data based on sample rate in seconds.
-    Assumes data is collected at 1Hz by default.
+    Parse metadata from an arc filename (e.g., sat006_L1_G_az097.txt).
+
+    Returns:
+        sat_num (int): Satellite number.
+        freq (str): Frequency (e.g., L1).
+        const (str): Constellation code (G, R, E, C).
+        azim (int): Azimuth (degrees).
     """
-    if sample_rate <= 1:
-        return data
-    return data[::sample_rate]
+    parts = filename.stem.split('_')
+    try:
+        sat_num = int(parts[0][3:])  # Remove 'sat'
+        freq = parts[1]
+        const = parts[2]
+        azim = int(parts[3][2:])  # Remove 'az'
+    except Exception as e:
+        print(f"Error parsing filename {filename}: {e}")
+        return None, None, None, None
+    return sat_num, freq, const, azim
 
-def find_closest_file(directory, target_filename, tolerance=25):
+
+def read_arc_file(file_path, decimate=None):
     """
-    Finds the closest matching file in a directory based on azimuth tolerance.
+    Read elevation angles, dSNR values, and seconds from an arc file.
+
+    Args:
+        file_path (Path): Path to the arc file.
+        decimate (int): If provided, take every Nth measurement.
+
+    Returns:
+        elev (np.array): Elevation angles.
+        dsnr (np.array): Detrended SNR values.
+        secs (np.array): Seconds.
     """
-    target_az = int(re.search(r'az(\d+)', target_filename).group(1))
-    files = list(directory.glob('*.txt'))
+    try:
+        data = np.loadtxt(file_path, skiprows=2)
+        if data.size == 0:
+            print(f"Warning: Empty file {file_path}")
+            return None, None, None
+        if decimate and decimate > 1:
+            data = data[::decimate]
+        return data[:, 0], data[:, 1], data[:, 2]
+    except Exception as e:
+        print(f"Error reading {file_path}: {e}")
+        return None, None, None
 
-    closest_file = None
-    min_diff = tolerance + 1  # Start with a value greater than tolerance
 
-    for file in files:
-        match = re.search(r'az(\d+)', file.name)
-        if match:
-            az = int(match.group(1))
-            diff = abs(az - target_az)
-            if diff <= tolerance and diff < min_diff:
-                closest_file = file
-                min_diff = diff
+def determine_arc_direction(elev):
+    """
+    Determine if an arc is ascending or descending based on elevation data.
+    """
+    if elev is None or len(elev) < 2:
+        return 'unknown'
+    return 'ascending' if elev[1] > elev[0] else 'descending'
 
-    return closest_file
 
-# List of files to process
-files = ['sat229_L1_E_az349.txt']
+def get_arc_directory(year, station, doy):
+    """
+    Get the directory containing arc files for the given station and DOY.
+    """
+    arc_dir = BASE_PATH / "arcs" / station / f"{int(doy):03d}"
+    if not arc_dir.exists():
+        print(f"Error: Arc directory not found: {arc_dir}")
+        sys.exit(1)
+    return arc_dir
 
-# Base data path
-base_path = Path("/home/george/Scripts/gnssIR/data/refl_code/2025/arcs")
 
-# Define stations and their labels
-stations = ['g1s1', 'g2s1', 'g3s1', 'g4s1']
-labels = ['Horizontal Patch', 'Vertical Patch', 'Horizontal GPS500', 'Vertical GPS500']
+def filter_arc_file(file_path, sat_filter, freq_filter, const_filter, direction_filter, decimate):
+    """
+    Return True if the file at file_path passes all filters.
+    """
+    sat_num, freq, const, azim = parse_arc_filename(file_path)
+    if sat_num is None:
+        return False
+    if sat_filter:
+        try:
+            sat_nums = [int(s) for s in sat_filter.split(',')]
+        except Exception as e:
+            print("Error parsing satellite filter:", e)
+            sys.exit(1)
+        if sat_num not in sat_nums:
+            return False
+    if freq_filter:
+        freqs = [f.strip() for f in freq_filter.split(',')]
+        if freq not in freqs:
+            return False
+    if const_filter:
+        consts = [c.strip().upper() for c in const_filter.split(',')]
+        if const.upper() not in consts:
+            return False
+    if direction_filter != 'both':
+        elev, dsnr, secs = read_arc_file(file_path, decimate=decimate)
+        if elev is None:
+            return False
+        arc_direction = determine_arc_direction(elev)
+        if arc_direction != direction_filter:
+            return False
+    return True
 
-# Set sample rate (in seconds)
-sample_rate = 15  # Change this value to decimate data (e.g., 5 for 5s samples, 30 for 30s samples)
 
-# Create subplots
-if selected_quadrant is None:
-    fig, axes = plt.subplots(2, 2, figsize=(15, 12))
-    fig.suptitle('SNR Comparisons for GNSA, GNSB, GNSC, and GNSD', fontsize=16)
-    axes = axes.flatten()
-else:
-    fig, ax = plt.subplots(figsize=(10, 8))
-    fig.suptitle(f'SNR Comparison - Quadrant {selected_quadrant}', fontsize=16)
-    axes = [ax]
+def main(stations, year, doy, sat, freq, const, direction, include_failed, decimate):
+    """
+    Compare arcs across the provided stations and plot them.
+    """
+    # Group arc files by (sat_num, frequency, constellation)
+    grouped_arcs = {}
+    for station in stations:
+        arc_dir = get_arc_directory(year, station, doy)
+        print(f"Scanning directory: {arc_dir}")
+        files = list(arc_dir.glob("sat*.txt"))
+        if include_failed:
+            failqc_dir = arc_dir / "failQC"
+            if failqc_dir.exists():
+                files.extend(list(failqc_dir.glob("sat*.txt")))
+        print(f"Found {len(files)} files in station {station}")
+        for file in files:
+            if not filter_arc_file(file, sat, freq, const, direction, decimate):
+                continue
+            sat_num, file_freq, file_const, azim = parse_arc_filename(file)
+            if sat_num is None:
+                continue
+            group_key = (sat_num, file_freq, file_const)
+            grouped_arcs.setdefault(group_key, []).append((station, file))
 
-# Process selected quadrant or all quadrants
-quadrant_map = {1: 0, 2: 1, 3: 2, 4: 3}
-if selected_quadrant is not None:
-    axes = [axes[quadrant_map[selected_quadrant]]]
+    if not grouped_arcs:
+        print("No arc files found matching specified criteria.")
+        sys.exit(0)
 
-for ax, filename in zip(axes, files):
-    for i, station in enumerate(stations):
-        # Construct potential directories
-        failqc_dir = base_path / station / "037" / "failQC"
-        default_dir = base_path / station / "037"
+    print(f"Found {len(grouped_arcs)} groups of arcs.")
+    # Determine subplot layout based on number of groups
+    n_groups = len(grouped_arcs)
+    if n_groups == 1:
+        fig, ax = plt.subplots(figsize=(10, 6))
+        axes = [ax]
+    else:
+        ncols = math.ceil(math.sqrt(n_groups))
+        nrows = math.ceil(n_groups / ncols)
+        fig, axes = plt.subplots(nrows, ncols, figsize=(15, 12))
+        axes = axes.flatten()
 
-        # Find closest matching file
-        filepath = find_closest_file(failqc_dir, filename) or find_closest_file(default_dir, filename)
+    # Plot each group (each group represents a specific satellite/frequency/constellation)
+    for ax, (group_key, arc_list) in zip(axes, grouped_arcs.items()):
+        sat_num, file_freq, file_const = group_key
+        for station, file in arc_list:
+            elev, dsnr, secs = read_arc_file(file, decimate=decimate)
+            if elev is None:
+                continue
+            # Plot detrended SNR vs. elevation angle.
+            ax.plot(elev, dsnr, label=f'{station}', alpha=1.0)
+        title = f"Sat {sat_num} {file_freq} {file_const}"
+        ax.set_title(title)
+        ax.set_xlabel("Elevation Angle (deg)")
+        ax.set_ylabel("Detrended SNR (volts/volts)")
+        ax.grid(True)
+        ax.legend()
 
-        if filepath:
-            try:
-                data = np.loadtxt(filepath, skiprows=1)
-                # Decimate the data
-                data = decimate_data(data, sample_rate)
-                # Convert elevation to sin(elevation) and get dSNR
-                sin_elev = np.sin(np.radians(data[:, 0]))
-                dsnr = data[:, 1]
-                # Plot with increased opacity
-                ax.plot(sin_elev, dsnr, label=labels[i], alpha=1.0)
-            except Exception as e:
-                print(f"Error reading {filepath}: {e}")
-        else:
-            print(f"No matching file found within tolerance for {filename} in {station}")
+    plt.tight_layout()
+    # Note: plt.show() is a blocking call. The script will wait here until you close the plot window.
+    print("Displaying plot... close the plot window to finish.")
+    plt.show()
+    print("Plot closed.")
 
-    # Customize the plot
-    ax.set_xlabel('sin(elevation angle)')
-    ax.set_ylabel('dSNR (volts/volts)')
-    ax.set_title(f'Arc: {filename.replace(".txt", "")}')
-    ax.legend()
-    ax.grid(True, alpha=0.3)
 
-# Adjust layout and show plot
-plt.tight_layout()
-plt.show()
-print(f"Plot generated with {sample_rate}s sample rate")
+def parse_arguments():
+    parser = argparse.ArgumentParser(
+        description="Compare arcs from GNSS-IR arc files to test antenna performance."
+    )
+    parser.add_argument('stations', help='Comma-separated list of station IDs to compare')
+    parser.add_argument('year', type=int, help='Year')
+    parser.add_argument('doy', type=int, help='Day of year')
+    parser.add_argument('-sat', help='Comma-separated list of satellite numbers to include')
+    parser.add_argument('-freq', help='Comma-separated list of frequencies (e.g., L1,L2) to include')
+    parser.add_argument('-const', help='Comma-separated list of constellations (G,R,E,C) to include')
+    parser.add_argument('-direction', choices=['ascending', 'descending', 'both'],
+                        default='both', help='Show only ascending, descending, or both arcs')
+    parser.add_argument('-include_failed', action='store_true',
+                        help='Include arcs that failed QC')
+    parser.add_argument('-decimate', type=int,
+                        help='Take every Nth measurement (e.g., 5 means use every 5th point)')
+    return parser.parse_args()
+
+
+if __name__ == '__main__':
+    args = parse_arguments()
+    station_list = [s.strip() for s in args.stations.split(',')]
+    main(station_list, args.year, args.doy, args.sat, args.freq, args.const,
+         args.direction, args.include_failed, args.decimate)
