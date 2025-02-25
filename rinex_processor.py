@@ -243,19 +243,19 @@ class RinexProcessor:
     def merge_segment(self, processed_files: List[str], segment_num: int, output_dir: str) -> bool:
         """
         Merge a segment of processed files into a single file.
-
-        Args:
-            processed_files: List of processed file paths to merge
-            segment_num: Segment number for output filename
-            output_dir: Directory for output file
-
-        Returns:
-            True if merge successful, False otherwise
         """
         if not processed_files:
             return False
 
-        output_file = os.path.join(output_dir, f"merged_{segment_num}.obs")
+        # Get start time from first file and end time from last file
+        first_start, _ = self.parse_teqc_meta(processed_files[0])
+        _, last_end = self.parse_teqc_meta(processed_files[-1])
+
+        # Generate filename with time range
+        filename_start = first_start.strftime('%Y%m%d_%H%M')
+        filename_end = last_end.strftime('%Y%m%d_%H%M')
+        output_file = os.path.join(output_dir, f"obs_{filename_start}_to_{filename_end}.obs")
+
         self.logger.info(f"Merging segment {segment_num} to {output_file}")
         self.logger.info(f"Files to merge: {' '.join(processed_files)}")
 

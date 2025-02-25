@@ -33,7 +33,7 @@ class Segment(NamedTuple):
 class SegmentConfig:
     """Configuration for segment processing"""
     teqc_path: str = "/home/george/Scripts/gnssIR/bin/teqc"
-    field_test_dir: str = "field_test_1"
+    field_test_dir: str = "field_tests/field_test_1"
     refl_code_dir: str = "/home/george/Scripts/gnssIR/data/refl_code"
     log_level: int = logging.INFO
 
@@ -93,7 +93,7 @@ class SegmentProcessor:
     def find_merged_file(self, host_dir: Path, target_start: datetime,
                          target_end: datetime) -> Tuple[Optional[Path], Optional[datetime], Optional[datetime]]:
         """Find the appropriate merged file containing the target time range"""
-        merged_files = glob.glob(str(host_dir / "merged_*.obs"))
+        merged_files = glob.glob(str(host_dir / "obs_*.obs"))  # Changed from merged_*.obs
 
         for merged_file in merged_files:
             merged_path = Path(merged_file)
@@ -180,7 +180,7 @@ class SegmentProcessor:
                 raise ValueError("Failed to verify extracted segment")
 
             # Generate destination information
-            host_num = int(segment.host.split('-')[-1])
+            host_num = int(segment.host.split('-')[-1][-1])  # Extract number from "gnss-host4"
             host_id = f"g{host_num}"
             doy = segment.start_time.timetuple().tm_yday
             year = str(segment.start_time.year)[-2:]

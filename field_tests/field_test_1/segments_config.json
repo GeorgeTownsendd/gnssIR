@@ -2,13 +2,13 @@
   "segments": [
     {
       "host": "gnsshost-1",
-      "name": "horizontal_patch",
+      "name": "vertical_patch",
       "start_time": "2025-02-06T21:50:00",
       "end_time": "2025-02-07T00:50:00"
     },
     {
       "host": "gnsshost-2",
-      "name": "vertical_patch",
+      "name": "horizontal_patch",
       "start_time": "2025-02-06T23:10:00",
       "end_time": "2025-02-07T00:50:00"
     },
