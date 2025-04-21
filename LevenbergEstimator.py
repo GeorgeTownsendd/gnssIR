@@ -156,8 +156,9 @@ class GNSSMultipathEstimator:
 
         # Set bounds to ensure H stays in physical range
         # Format: (lower_bounds, upper_bounds) for (A, eta, H, phi)
-        bounds = ([0, 0, height_bounds[0], -np.inf],  # lower bounds
-                  [np.inf, np.inf, height_bounds[1], np.inf])  # upper bounds
+        # Set bounds for all parameters: (A, eta, H, phi)
+        bounds = ([80, 0, height_bounds[0], -np.inf],  # lower bounds
+                  [130, np.inf, height_bounds[1], np.inf])  # upper bounds
 
         # Perform optimization
         result = optimize.least_squares(

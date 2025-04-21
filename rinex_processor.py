@@ -85,6 +85,7 @@ class RinexProcessor:
             output_file = os.path.join(self._temp_dir, f"{base_name}.obs")
 
             cmd = ['convbin', '-od', '-os', '-v', '2.11', '-r', 'ubx',
+                   '-ro', '"-TADJ=1.0"',
                    ubx_file, '-o', output_file]
             self.logger.info(f"Converting {ubx_file} to {output_file}")
 

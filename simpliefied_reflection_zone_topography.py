@@ -115,8 +115,8 @@ def analyze_terrain(dem_path: str, lat: float, lon: float, distance_m: float = 6
                            extent=[bounds[0], bounds[2],  # left, right
                                    bounds[1], bounds[3]],  # bottom, top
                            cmap='viridis',
-                           vmin=33.0,
-                           vmax=58.3)
+                           vmin=49,
+                           vmax=53)
         plt.colorbar(im, ax=ax_map, label='Elevation (m)')
 
         # Plot center point
@@ -208,9 +208,9 @@ def analyze_terrain(dem_path: str, lat: float, lon: float, distance_m: float = 6
 
 if __name__ == "__main__":
     # Example usage
-    dem_path = "/home/george/Downloads/lds-auckland-north-lidar-1m-dem-2016-2018-GTiff/DEM_BA31_2016_1000_1315.tif"
-    lat = -36.70093014 #-36.7009301442°, 174.5559400139°
-    lon = 174.555940013
+    dem_path = "/home/george/Documents/Work/warkwork_assessment/warkwork_dsm.tif"
+    lat = -36.4304816524546 #-36.7009301442°, 174.5559400139°
+    lon = 174.6666123167646
     output_dir = "/home/george/Downloads"  # Specify your output directory
     fig, profiles = analyze_terrain(dem_path, lat, lon, output_dir=output_dir)  # Uses default 60m
     plt.show()

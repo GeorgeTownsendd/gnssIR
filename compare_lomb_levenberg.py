@@ -116,7 +116,8 @@ def plot_comparison(sin_theta, dsnr_values, lm_predictions, lsp_predictions,
     plt.tight_layout()
 
     if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.show()
+        #plt.savefig(save_path, dpi=300, bbox_inches='tight')
         logger.info(f"Plot saved to {save_path}")
 
 
@@ -124,7 +125,7 @@ def main():
     """
     Main function to compare LM and LSP methods.
     """
-    filepath = "data/refl_code/2023/arcs/mchl/001/sat004_L1_G_az034.txt"
+    filepath = "/home/george/Scripts/gnssIR/data/refl_code/2025/arcs/gns1/105/sat001_L2_G_az035.txt"
 
     try:
         logger.info(f"Processing file: {filepath}")
@@ -138,7 +139,8 @@ def main():
         logger.info(f"Signal type detected: {'L1' if 'L1' in filepath else 'L2'}")
         logger.info(f"Wavelength: {wavelength:.4f}m")
 
-        lm_params, converged = estimator.fit_parameters()
+
+        lm_params, converged = estimator.fit_parameters(height_bounds=(2.0, 4.0))
 
         if not converged:
             logger.error("LM fit did not converge")

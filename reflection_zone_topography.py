@@ -531,7 +531,7 @@ def plot_reflection_zones(station_name: str,
 
 
 if __name__ == "__main__":
-    for station_name in ['ktia']:#['ktia', 'wark', 'sedd', 'mchl']:
+    for station_name in ['wark']:#['ktia', 'wark', 'sedd', 'mchl']:
         #station_name = 'sedd'
         phase_file = f"data/refl_code/input/{station_name}_phaseRH.txt"
         dem_paths = {

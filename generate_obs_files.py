@@ -158,16 +158,16 @@ class ObservationGenerator:
             return False
 
         # Synchronize remote GNSS host data
-        self.logger.info("Synchronizing GNSS host data...")
-        try:
-            synced_hosts = pull_gnsshost_data.sync_all_hosts()
-            if not synced_hosts:
-                self.logger.error("No hosts were successfully synchronized.")
-                return False
-            self.logger.info(f"Synchronized hosts: {synced_hosts}")
-        except Exception as e:
-            self.logger.error(f"Data synchronization failed: {e}")
-            return False
+        #self.logger.info("Synchronizing GNSS host data...")
+        #try:
+        #    synced_hosts = pull_gnsshost_data.sync_all_hosts()
+        #    if not synced_hosts:
+        #        self.logger.error("No hosts were successfully synchronized.")
+        #        return False
+        #    self.logger.info(f"Synchronized hosts: {synced_hosts}")
+        #except Exception as e:
+        #    self.logger.error(f"Data synchronization failed: {e}")
+        #    return False
 
         # Process RINEX files for each host
         processor = self.rinex_processor.RinexProcessor()
