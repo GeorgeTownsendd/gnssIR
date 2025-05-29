@@ -262,4 +262,4 @@ def compare_arcs(station, year, doy1, doy2, track=1, results_dir='results/'):
 
 
 if __name__ == '__main__':
-    compare_arcs('p038', 2017, 211, 212, track=3)
+    compare_arcs('gns1', 2025, 116, 117, track=4)

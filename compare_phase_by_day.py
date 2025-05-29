@@ -14,17 +14,15 @@ import os
 
 # List of SNR files to compare (EDIT THESE)
 SNR_FILES = [
-    "/home/george/Scripts/gnssIR/data/refl_code/2025/snr/gns1/gns11050.25.snr88",
-    "/home/george/Scripts/gnssIR/data/refl_code/2025/snr/gns1/gns11060.25.snr88",
-    "/home/george/Scripts/gnssIR/data/refl_code/2025/snr/gns1/gns11070.25.snr88",
-    # Add more files as needed
+    "/home/george/Scripts/gnssIR/data/refl_code/2025/snr/gns1/gns11170.25.snr88",
+    "/home/george/Scripts/gnssIR/data/refl_code/2025/snr/gns1/gns11170.25.snr88",
 ]
 
 # Define reflector height (in meters) - EDIT THIS
 RH = 3.0
 
 # Specify which GPS satellite PRN to analyze - EDIT THIS
-TARGET_PRN = 121
+TARGET_PRN = 1
 
 # Data filtering and processing options - EDIT THESE
 DECIMATE = 30  # Decimate data to this interval in seconds (e.g., 30s) - set to 1 for no decimation
